@@ -3,9 +3,12 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import { loadCredentials, authorize } from './auth.js';
 import { GtmService } from './gtmService.js';
+import { logger } from './logger.js';
 
 async function main() {
     console.log(chalk.bold.cyan('\n--- GTM Container Importer ---\n'));
+    logger.event('SESSION_START', { pid: process.pid, cwd: process.cwd() });
+    console.log(chalk.gray(`Log de sesión: ${logger.filePath}`));
 
     try {
         // 1. Credentials
@@ -17,9 +20,14 @@ async function main() {
                 default: 'credenciales.json'
             }
         ]);
+        logger.userInput('credentialsPath', credentialsPath);
 
         const credentials = await loadCredentials(credentialsPath);
+        logger.info(`Credenciales cargadas desde: ${credentialsPath} | tipo: ${credentials.type || 'oauth2'}`);
+
         const auth = await authorize(credentials);
+        logger.info('Autorización completada.');
+
         const gtm = new GtmService(auth);
 
         // 2. Container JSON
@@ -31,19 +39,25 @@ async function main() {
                 default: 'container.json'
             }
         ]);
+        logger.userInput('containerPath', containerPath);
 
         if (!await fs.exists(containerPath)) {
-            console.error(chalk.red(`Error: El archivo ${containerPath} no existe.`));
+            const msg = `El archivo ${containerPath} no existe.`;
+            logger.error(msg);
+            console.error(chalk.red(`Error: ${msg}`));
             return;
         }
         const containerConfig = await fs.readJSON(containerPath);
+        logger.info(`container.json cargado desde: ${containerPath}`);
 
         // 3. List Accounts
         console.log(chalk.yellow('\nBuscando cuentas de GTM...'));
         const accounts = await gtm.listAccounts();
         console.log(chalk.gray(`Se encontraron ${accounts.length} cuenta(s).`));
+        logger.info(`Cuentas encontradas: ${accounts.length}`);
 
         if (accounts.length === 0) {
+            logger.warn('No se encontraron cuentas asociadas a las credenciales.');
             console.log(chalk.red('No se encontraron cuentas asociadas a estas credenciales.'));
             return;
         }
@@ -52,6 +66,7 @@ async function main() {
         if (accounts.length === 1) {
             const only = accounts[0];
             accountPath = only.path || `accounts/${only.accountId}`;
+            logger.event('ACCOUNT_AUTO_SELECTED', { name: only.name, path: accountPath });
             console.log(chalk.green(`Cuenta auto-seleccionada: ${chalk.bold(only.name)} (${accountPath})`));
         } else {
             const ans = await inquirer.prompt([
@@ -66,10 +81,13 @@ async function main() {
                 }
             ]);
             accountPath = ans.selectedPath;
+            logger.userInput('selectedAccountPath', accountPath);
         }
 
         if (!accountPath) {
-            console.error(chalk.red('\nError: No se pudo determinar una ruta de cuenta válida.'));
+            const msg = 'No se pudo determinar una ruta de cuenta válida.';
+            logger.error(msg);
+            console.error(chalk.red(`\nError: ${msg}`));
             return;
         }
 
@@ -77,8 +95,10 @@ async function main() {
         console.log(chalk.yellow(`\nBuscando contenedores para: ${accountPath}...`));
         const containers = await gtm.listContainers(accountPath);
         console.log(chalk.gray(`Se encontraron ${containers.length} contenedor(es).`));
+        logger.info(`Contenedores encontrados: ${containers.length}`);
 
         if (!containers || containers.length === 0) {
+            logger.warn(`No se encontraron contenedores en la cuenta: ${accountPath}`);
             console.log(chalk.red('No se encontraron contenedores en esta cuenta.'));
             return;
         }
@@ -87,6 +107,7 @@ async function main() {
         if (containers.length === 1) {
             const only = containers[0];
             selectedContainerPath = only.path;
+            logger.event('CONTAINER_AUTO_SELECTED', { name: only.name, path: selectedContainerPath });
             console.log(chalk.green(`Contenedor auto-seleccionado: ${chalk.bold(only.name)} (${selectedContainerPath})`));
         } else {
             const ans = await inquirer.prompt([
@@ -98,10 +119,13 @@ async function main() {
                 }
             ]);
             selectedContainerPath = ans.containerPath;
+            logger.userInput('selectedContainerPath', selectedContainerPath);
         }
 
         if (!selectedContainerPath) {
-            console.error(chalk.red('\nError: No se pudo determinar una ruta de contenedor válida.'));
+            const msg = 'No se pudo determinar una ruta de contenedor válida.';
+            logger.error(msg);
+            console.error(chalk.red(`\nError: ${msg}`));
             return;
         }
 
@@ -118,14 +142,17 @@ async function main() {
                 default: true
             }
         ]);
+        logger.userInput('createNew', createNew);
 
         let workspace;
         if (createNew) {
             console.log(chalk.yellow(`\nCreando nuevo workspace: ${newWorkspaceName}...`));
             workspace = await gtm.createWorkspace(selectedContainerPath, newWorkspaceName);
+            logger.event('WORKSPACE_CREATED', { name: workspace.name, path: workspace.path });
             console.log(chalk.green(`Workspace creado: ${workspace.name}`));
         } else {
             workspace = await gtm.getDefaultWorkspace(selectedContainerPath);
+            logger.event('WORKSPACE_EXISTING', { name: workspace.name, path: workspace.path });
             console.log(chalk.green(`\nUsando workspace existente: ${workspace.name}`));
         }
 
@@ -141,6 +168,7 @@ async function main() {
             }
         ]);
         const importMode = useMerge ? 'merge' : 'overwrite';
+        logger.userInput('importMode', importMode);
         console.log(chalk.gray(`  Modo seleccionado: ${chalk.bold(importMode)}`));
 
         let conflictStrategy = 'overwrite';
@@ -154,11 +182,13 @@ async function main() {
                 }
             ]);
             conflictStrategy = useOverwriteOnConflict ? 'overwrite' : 'merge';
+            logger.userInput('conflictStrategy', conflictStrategy);
             console.log(chalk.gray(`  Estrategia de conflictos: ${chalk.bold(conflictStrategy)}`));
         }
 
         // 7. Analyze diff (now contextualized with the chosen mode)
         console.log(chalk.yellow('\nAnalizando diferencias y posibles impactos...'));
+        logger.event('DIFF_ANALYSIS_START', { workspace: workspace.path, importMode, conflictStrategy });
 
         const [remoteTags, remoteTriggers, remoteVariables] = await Promise.all([
             gtm.listTags(workspace.path),
@@ -179,6 +209,12 @@ async function main() {
         const tagDiff      = compare(localTags, remoteTags);
         const triggerDiff  = compare(localTriggers, remoteTriggers);
         const variableDiff = compare(localVariables, remoteVariables);
+
+        logger.event('DIFF_RESULT', {
+            tags:      { added: tagDiff.added.length,      conflicts: tagDiff.conflicts.length,      deleted: tagDiff.deleted.length },
+            triggers:  { added: triggerDiff.added.length,  conflicts: triggerDiff.conflicts.length,  deleted: triggerDiff.deleted.length },
+            variables: { added: variableDiff.added.length, conflicts: variableDiff.conflicts.length, deleted: variableDiff.deleted.length }
+        });
 
         console.log(chalk.bold('\n--- RESUMEN DE CAMBIOS ---'));
 
@@ -215,11 +251,18 @@ async function main() {
                     default: false
                 }
             ]);
+            logger.userInput('showConflictDetails', showDetails);
             if (showDetails) {
                 const names = list => list.map(i => i.name).join(', ');
                 if (tagDiff.conflicts.length > 0)      console.log(chalk.yellow('\nConflictos Tags:'),      names(tagDiff.conflicts));
                 if (triggerDiff.conflicts.length > 0)  console.log(chalk.yellow('Conflictos Triggers:'),  names(triggerDiff.conflicts));
                 if (variableDiff.conflicts.length > 0) console.log(chalk.yellow('Conflictos Variables:'), names(variableDiff.conflicts));
+
+                logger.info('Detalle de conflictos', {
+                    tags:      tagDiff.conflicts.map(i => i.name),
+                    triggers:  triggerDiff.conflicts.map(i => i.name),
+                    variables: variableDiff.conflicts.map(i => i.name)
+                });
             }
         }
 
@@ -237,7 +280,10 @@ async function main() {
                 message: `Para confirmar, escribe el nombre de la cuenta (${chalk.bold(selectedAccount.name)}):`
             }
         ]);
+        logger.userInput('confirmName1', confirmName1 === selectedAccount.name ? '[CORRECTO]' : '[INCORRECTO]');
+
         if (confirmName1 !== selectedAccount.name) {
+            logger.warn('Primera confirmación de nombre fallida. Importación cancelada.');
             console.log(chalk.red('\nEl nombre no coincide. Importación cancelada.'));
             return;
         }
@@ -249,7 +295,10 @@ async function main() {
                 message: 'Por seguridad, escríbelo una vez más:'
             }
         ]);
+        logger.userInput('confirmName2', confirmName2 === selectedAccount.name ? '[CORRECTO]' : '[INCORRECTO]');
+
         if (confirmName2 !== selectedAccount.name) {
+            logger.warn('Segunda confirmación de nombre fallida. Importación cancelada.');
             console.log(chalk.red('\nEl nombre no coincide. Importación cancelada.'));
             return;
         }
@@ -262,18 +311,25 @@ async function main() {
                 default: false
             }
         ]);
+        logger.userInput('finalConfirm', finalConfirm);
 
         if (finalConfirm) {
+            logger.event('IMPORT_START', { workspace: workspace.path, importMode, conflictStrategy });
             console.log(chalk.blue('\nImportando cambios al workspace (Borrador)...'));
             await gtm.importContainer(workspace.path, containerConfig, importMode, conflictStrategy);
+            logger.event('IMPORT_SUCCESS', { workspace: workspace.path });
             console.log(chalk.bold.green('\n¡Éxito! Los cambios se han importado correctamente como un borrador.'));
             console.log(chalk.cyan('Un administrador debe revisar y publicar los cambios desde la consola de GTM.'));
         } else {
+            logger.event('IMPORT_CANCELLED_BY_USER');
             console.log(chalk.yellow('\nImportación cancelada.'));
         }
 
     } catch (error) {
+        logger.error('Error crítico en main():', error.message, error.stack);
         console.error(chalk.red('\nOcurrió un error crítico:'), error.message);
+    } finally {
+        logger.event('SESSION_END');
     }
 }
 

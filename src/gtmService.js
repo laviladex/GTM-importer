@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { logger } from './logger.js';
 
 export class GtmService {
     constructor(auth) {
@@ -9,10 +10,14 @@ export class GtmService {
      * Lists all GTM accounts the user has access to.
      */
     async listAccounts() {
+        logger.info('Llamando a tagmanager.accounts.list()');
         try {
             const res = await this.tagmanager.accounts.list();
-            return res.data.account || [];
+            const accounts = res.data.account || [];
+            logger.apiResponse('listAccounts', { total: accounts.length, accounts });
+            return accounts;
         } catch (error) {
+            logger.apiError('listAccounts', error);
             console.error('Error al listar cuentas:', error.message);
             throw error;
         }
@@ -23,10 +28,14 @@ export class GtmService {
      * @param {string} accountPath Format: accounts/{accountId}
      */
     async listContainers(accountPath) {
+        logger.info(`Llamando a listContainers para: ${accountPath}`);
         try {
             const res = await this.tagmanager.accounts.containers.list({ parent: accountPath });
-            return res.data.container || [];
+            const containers = res.data.container || [];
+            logger.apiResponse('listContainers', { accountPath, total: containers.length, containers });
+            return containers;
         } catch (error) {
+            logger.apiError('listContainers', error);
             console.error('Error al listar contenedores:', error.message);
             throw error;
         }
@@ -37,12 +46,16 @@ export class GtmService {
      * @param {string} containerPath Format: accounts/{accountId}/containers/{containerId}
      */
     async getDefaultWorkspace(containerPath) {
+        logger.info(`Llamando a getDefaultWorkspace para: ${containerPath}`);
         try {
             const res = await this.tagmanager.accounts.containers.workspaces.list({ parent: containerPath });
             const workspaces = res.data.workspace || [];
-            // Usually we use the "Default Workspace"
-            return workspaces.find(w => w.name === 'Default Workspace') || workspaces[0];
+            logger.apiResponse('getDefaultWorkspace', { containerPath, total: workspaces.length, workspaces });
+            const ws = workspaces.find(w => w.name === 'Default Workspace') || workspaces[0];
+            logger.info(`Workspace seleccionado: ${ws?.name} (${ws?.path})`);
+            return ws;
         } catch (error) {
+            logger.apiError('getDefaultWorkspace', error);
             console.error('Error al obtener workspace:', error.message);
             throw error;
         }
@@ -54,6 +67,7 @@ export class GtmService {
      * @param {string} name Name of the new workspace
      */
     async createWorkspace(containerPath, name) {
+        logger.info(`Creando workspace "${name}" en: ${containerPath}`);
         try {
             const res = await this.tagmanager.accounts.containers.workspaces.create({
                 parent: containerPath,
@@ -62,8 +76,10 @@ export class GtmService {
                     description: `Importado automáticamente por GTM-importer el ${new Date().toLocaleString()}`
                 }
             });
+            logger.apiResponse('createWorkspace', res.data);
             return res.data;
         } catch (error) {
+            logger.apiError('createWorkspace', error);
             console.error('Error al crear workspace:', error.message);
             throw error;
         }
@@ -73,10 +89,14 @@ export class GtmService {
      * Lists all tags in a workspace.
      */
     async listTags(workspacePath) {
+        logger.info(`Llamando a listTags para: ${workspacePath}`);
         try {
             const res = await this.tagmanager.accounts.containers.workspaces.tags.list({ parent: workspacePath });
-            return res.data.tag || [];
+            const tags = res.data.tag || [];
+            logger.apiResponse('listTags', { workspacePath, total: tags.length, tags });
+            return tags;
         } catch (error) {
+            logger.apiError('listTags', error);
             console.error('Error al listar etiquetas:', error.message);
             throw error;
         }
@@ -86,10 +106,14 @@ export class GtmService {
      * Lists all triggers in a workspace.
      */
     async listTriggers(workspacePath) {
+        logger.info(`Llamando a listTriggers para: ${workspacePath}`);
         try {
             const res = await this.tagmanager.accounts.containers.workspaces.triggers.list({ parent: workspacePath });
-            return res.data.trigger || [];
+            const triggers = res.data.trigger || [];
+            logger.apiResponse('listTriggers', { workspacePath, total: triggers.length, triggers });
+            return triggers;
         } catch (error) {
+            logger.apiError('listTriggers', error);
             console.error('Error al listar activadores:', error.message);
             throw error;
         }
@@ -99,10 +123,14 @@ export class GtmService {
      * Lists all variables in a workspace.
      */
     async listVariables(workspacePath) {
+        logger.info(`Llamando a listVariables para: ${workspacePath}`);
         try {
             const res = await this.tagmanager.accounts.containers.workspaces.variables.list({ parent: workspacePath });
-            return res.data.variable || [];
+            const variables = res.data.variable || [];
+            logger.apiResponse('listVariables', { workspacePath, total: variables.length, variables });
+            return variables;
         } catch (error) {
+            logger.apiError('listVariables', error);
             console.error('Error al listar variables:', error.message);
             throw error;
         }
@@ -113,9 +141,10 @@ export class GtmService {
      * Note: Using manual request because import_container might be missing in some versions of the library helpers.
      */
     async importContainer(workspacePath, containerConfig, importMode = 'overwrite', conflictStrategy = 'overwrite') {
+        logger.info(`Importando contenedor en: ${workspacePath} | modo=${importMode} | conflicto=${conflictStrategy}`);
         try {
             const url = `https://tagmanager.googleapis.com/tagmanager/v2/${workspacePath}:import_container`;
-            
+
             const res = await this.tagmanager.context.google.auth.request({
                 method: 'POST',
                 url: url,
@@ -125,9 +154,11 @@ export class GtmService {
                     conflictStrategy: conflictStrategy
                 }
             });
-            
+
+            logger.apiResponse('importContainer', res.data);
             return res.data;
         } catch (error) {
+            logger.apiError('importContainer', error);
             console.error('Error al importar contenedor:', error.response?.data?.error?.message || error.message);
             throw error;
         }
