@@ -15,6 +15,43 @@ El programa permite importar la configuración de un contenedor a las cuentas de
 - NodeJs
 - Google Tag Manager API
 
+# Setup
+
+Para que el programa funcione, es necesario configurar las credenciales de Google Cloud y otorgar permisos en Google Tag Manager.
+
+## 1. Habilitar la API
+
+1. Ve a [Google Cloud Console](https://console.cloud.google.com/).
+2. Crea un nuevo proyecto o selecciona uno existente.
+3. Navega a **APIs y servicios > Biblioteca**.
+4. Busca **"Google Tag Manager API"** y haz clic en **Habilitar**.
+
+## 2. Crear Credenciales
+
+El sistema soporta dos tipos de autenticación. Elige una y guarda el archivo como `credenciales.json` en la raíz del proyecto.
+
+### Opción A: Cuenta de Servicio (Recomendado)
+
+Ideal para procesos donde no se desea una intervención manual constante.
+
+1. En Cloud Console, ve a **APIs y servicios > Credenciales**.
+2. Haz clic en **Crear credenciales > Cuenta de servicio**.
+3. Sigue los pasos y, una vez creada, entra en la cuenta.
+4. Ve a la pestaña **Claves > Agregar clave > Crear clave nueva**.
+5. Selecciona **JSON** y descárgalo como `credenciales.json`.
+6. **IMPORTANTE**: Copia el email de la cuenta de servicio (ej: `nombre@proyecto.iam.gserviceaccount.com`).
+7. Ve a [Google Tag Manager](https://tagmanager.google.com/), entra en la cuenta/contenedor deseado y en **Administración > Gestión de usuarios**, añade el email con permisos de **Administrador**.
+
+### Opción B: ID de Cliente OAuth 2.0
+
+Ideal para actuar en nombre de tu propio usuario.
+
+1. En Cloud Console, ve a **APIs y servicios > Pantalla de consentimiento de OAuth** y configúrala (tipo Externo, añade tu email como usuario de prueba).
+2. Ve a **Credenciales > Crear credenciales > ID de cliente de OAuth**.
+3. Selecciona **Aplicación de escritorio** (Desktop App).
+4. Descarga el archivo JSON y renombralo como `credenciales.json`.
+5. Al ejecutar el programa por primera vez, se te proporcionará una URL para autorizar el acceso y obtener un código.
+
 # Tareas
 
 1. Crear autenticación del usuario

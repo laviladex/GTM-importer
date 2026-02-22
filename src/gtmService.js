@@ -49,20 +49,86 @@ export class GtmService {
     }
 
     /**
-     * Imports a container configuration into a workspace.
+     * Creates a new workspace in a container.
+     * @param {string} containerPath Format: accounts/{accountId}/containers/{containerId}
+     * @param {string} name Name of the new workspace
      */
-    async importContainer(workspacePath, containerConfig) {
+    async createWorkspace(containerPath, name) {
         try {
-            const res = await this.tagmanager.accounts.containers.workspaces.import_container({
-                parent: workspacePath,
+            const res = await this.tagmanager.accounts.containers.workspaces.create({
+                parent: containerPath,
                 requestBody: {
-                    containerVersion: containerConfig,
-                    importMode: 'overwrite'
+                    name: name,
+                    description: `Importado automáticamente por GTM-importer el ${new Date().toLocaleString()}`
                 }
             });
             return res.data;
         } catch (error) {
-            console.error('Error al importar contenedor:', error.message);
+            console.error('Error al crear workspace:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Lists all tags in a workspace.
+     */
+    async listTags(workspacePath) {
+        try {
+            const res = await this.tagmanager.accounts.containers.workspaces.tags.list({ parent: workspacePath });
+            return res.data.tag || [];
+        } catch (error) {
+            console.error('Error al listar etiquetas:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Lists all triggers in a workspace.
+     */
+    async listTriggers(workspacePath) {
+        try {
+            const res = await this.tagmanager.accounts.containers.workspaces.triggers.list({ parent: workspacePath });
+            return res.data.trigger || [];
+        } catch (error) {
+            console.error('Error al listar activadores:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Lists all variables in a workspace.
+     */
+    async listVariables(workspacePath) {
+        try {
+            const res = await this.tagmanager.accounts.containers.workspaces.variables.list({ parent: workspacePath });
+            return res.data.variable || [];
+        } catch (error) {
+            console.error('Error al listar variables:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Imports a container configuration into a workspace.
+     * Note: Using manual request because import_container might be missing in some versions of the library helpers.
+     */
+    async importContainer(workspacePath, containerConfig, importMode = 'overwrite', conflictStrategy = 'overwrite') {
+        try {
+            const url = `https://tagmanager.googleapis.com/tagmanager/v2/${workspacePath}:import_container`;
+            
+            const res = await this.tagmanager.context.google.auth.request({
+                method: 'POST',
+                url: url,
+                data: {
+                    containerVersion: containerConfig,
+                    importMode: importMode,
+                    conflictStrategy: conflictStrategy
+                }
+            });
+            
+            return res.data;
+        } catch (error) {
+            console.error('Error al importar contenedor:', error.response?.data?.error?.message || error.message);
             throw error;
         }
     }
