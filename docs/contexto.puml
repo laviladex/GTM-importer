@@ -1,0 +1,37 @@
+@startuml Diagrama_de_Contexto_GTM_Importer
+
+!define ICONURL https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/master/
+title Diagrama de Contexto — GTM Importer
+
+skinparam rectangleBorderColor #444444
+skinparam rectangleBackgroundColor #f9f9f9
+skinparam actorBorderColor #2c7bb6
+skinparam actorBackgroundColor #d0e4f7
+skinparam databaseBorderColor #e07b00
+skinparam databaseBackgroundColor #fff0d0
+skinparam arrowColor #333333
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+
+' ─── Actores externos ────────────────────────────────────────────────
+actor "Operador\n(Usuario)" as Usuario
+
+' ─── Sistema principal ───────────────────────────────────────────────
+rectangle "**GTM Importer**\n(CLI Node.js)" as Sistema #dceeff {
+}
+
+' ─── Sistemas externos ───────────────────────────────────────────────
+rectangle "Google Cloud\nOAuth 2.0 / Service Account" as GoogleAuth #ffe8cc
+rectangle "Google Tag Manager\nAPI v2" as GTMAPI #ffe8cc
+database "Sistema de\nArchivos Local" as FileSystem #f0ffe0
+
+' ─── Relaciones ──────────────────────────────────────────────────────
+Usuario      --> Sistema      : Ejecuta el programa,\nresponde prompts interactivos
+Sistema      --> GoogleAuth   : Solicita autorización\n(OAuth2 / Service Account)
+GoogleAuth   --> Sistema      : Devuelve token de acceso
+Sistema      --> GTMAPI       : Consulta cuentas, contenedores,\nworkspaces, tags, triggers, variables;\nenvía configuración a importar
+GTMAPI       --> Sistema      : Devuelve datos de recursos GTM
+FileSystem   --> Sistema      : Lee credenciales.json,\ncontainer.json, token.json
+Sistema      --> FileSystem   : Escribe token.json,\narchivos de log de sesión
+
+@enduml

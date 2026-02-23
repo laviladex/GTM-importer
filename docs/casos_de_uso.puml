@@ -1,0 +1,89 @@
+@startuml Diagrama_de_Casos_de_Uso_GTM_Importer
+
+title Diagrama de Casos de Uso — GTM Importer
+
+skinparam actorBorderColor #2c7bb6
+skinparam actorBackgroundColor #d0e4f7
+skinparam usecaseBorderColor #2c7bb6
+skinparam usecaseBackgroundColor #f0f8ff
+skinparam packageBorderColor #888888
+skinparam packageBackgroundColor #fafafa
+skinparam arrowColor #333333
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam roundCorner 10
+
+' ─── Actores ─────────────────────────────────────────────────────────
+actor "Operador" as Operador
+actor "Google OAuth 2.0 /\nService Account" as GoogleAuth <<sistema externo>>
+actor "GTM API v2" as GTMAPI <<sistema externo>>
+
+' ─── Sistema ─────────────────────────────────────────────────────────
+rectangle "**GTM Importer**" as Sistema {
+
+  usecase "UC-01\nAutenticar con Google" as UC01
+  usecase "UC-02\nSeleccionar archivo de credenciales" as UC02
+  usecase "UC-03\nObtener token OAuth2" as UC03
+
+  usecase "UC-04\nSeleccionar archivo container.json" as UC04
+
+  usecase "UC-05\nSeleccionar cuenta GTM" as UC05
+  usecase "UC-06\nListar cuentas GTM" as UC06
+
+  usecase "UC-07\nSeleccionar contenedor GTM" as UC07
+  usecase "UC-08\nListar contenedores GTM" as UC08
+
+  usecase "UC-09\nSeleccionar workspace" as UC09
+  usecase "UC-10\nCrear nuevo workspace" as UC10
+  usecase "UC-11\nObtener workspace existente" as UC11
+
+  usecase "UC-12\nConfigurar modo de importación" as UC12
+  usecase "UC-13\nAnalizar diferencias (Diff)" as UC13
+
+  usecase "UC-14\nVer detalle de conflictos" as UC14
+
+  usecase "UC-15\nConfirmar importación" as UC15
+  usecase "UC-16\nEjecutar importación" as UC16
+
+  usecase "UC-17\nRegistrar log de sesión" as UC17
+  usecase "UC-18\nReiniciar proceso" as UC18
+}
+
+' ─── Relaciones Operador ─────────────────────────────────────────────
+Operador --> UC02
+Operador --> UC04
+Operador --> UC05
+Operador --> UC07
+Operador --> UC09
+Operador --> UC12
+Operador --> UC14
+Operador --> UC15
+Operador --> UC18
+
+' ─── Relaciones sistemas externos ────────────────────────────────────
+UC01 --> GoogleAuth
+UC06 --> GTMAPI
+UC08 --> GTMAPI
+UC10 --> GTMAPI
+UC11 --> GTMAPI
+UC13 --> GTMAPI
+UC16 --> GTMAPI
+
+' ─── Includes / Extends ──────────────────────────────────────────────
+UC02 ..> UC01 : <<include>>
+UC01 ..> UC03 : <<extend>>\n[si no hay token almacenado]
+
+UC05 ..> UC06 : <<include>>
+UC07 ..> UC08 : <<include>>
+
+UC09 ..> UC10 : <<extend>>\n[si usuario elige nuevo]
+UC09 ..> UC11 : <<extend>>\n[si usuario elige existente]
+
+UC12 ..> UC13 : <<include>>
+UC13 ..> UC14 : <<extend>>\n[si existen conflictos]
+
+UC15 ..> UC16 : <<include>>
+UC16 ..> UC17 : <<include>>
+UC18 ..> UC17 : <<include>>
+
+@enduml

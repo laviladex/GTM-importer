@@ -1,0 +1,129 @@
+@startuml Diagrama_de_Entidades_GTM_Importer
+
+title Diagrama de Relación de Entidades — GTM Importer
+
+skinparam class {
+  BackgroundColor #dceeff
+  BorderColor #2c7bb6
+  ArrowColor #333333
+  FontName Arial
+  FontSize 12
+}
+
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam linetype ortho
+
+' ─── Entidades del sistema ───────────────────────────────────────────
+
+entity "Sesion" as Sesion {
+  * id : string <<PK>>
+  --
+  * timestamp : datetime
+  * pid : integer
+  * cwd : string
+}
+
+entity "Credencial" as Credencial {
+  * ruta : string <<PK>>
+  --
+  * tipo : enum {oauth2, service_account}
+  * client_id : string [0..1]
+  * client_secret : string [0..1]
+  * service_account_email : string [0..1]
+}
+
+entity "Token" as Token {
+  * ruta : string <<PK>>
+  --
+  * access_token : string
+  * refresh_token : string
+  * expiry_date : datetime
+}
+
+entity "ArchivoContenedor" as ArchivoContenedor {
+  * ruta : string <<PK>>
+  --
+  * nombre_contenedor : string
+  * tags : Tag[]
+  * triggers : Trigger[]
+  * variables : Variable[]
+}
+
+entity "CuentaGTM" as CuentaGTM {
+  * accountId : string <<PK>>
+  --
+  * path : string
+  * name : string
+}
+
+entity "ContenedorGTM" as ContenedorGTM {
+  * containerId : string <<PK>>
+  --
+  * path : string
+  * name : string
+  * accountId : string <<FK>>
+}
+
+entity "Workspace" as Workspace {
+  * workspaceId : string <<PK>>
+  --
+  * path : string
+  * name : string
+  * description : string
+  * containerId : string <<FK>>
+}
+
+entity "Tag" as Tag {
+  * name : string <<PK>>
+  --
+  * type : string
+}
+
+entity "Trigger" as TriggerE {
+  * name : string <<PK>>
+  --
+  * type : string
+}
+
+entity "Variable" as VariableE {
+  * name : string <<PK>>
+  --
+  * type : string
+}
+
+entity "Importacion" as Importacion {
+  * id : string <<PK>>
+  --
+  * importMode : enum {merge, overwrite}
+  * conflictStrategy : enum {merge, overwrite}
+  * timestamp : datetime
+  * resultado : enum {exitoso, cancelado, error}
+  * workspacePath : string <<FK>>
+}
+
+entity "LogSesion" as LogSesion {
+  * ruta : string <<PK>>
+  --
+  * timestamp : datetime
+  * sesionId : string <<FK>>
+}
+
+' ─── Relaciones ──────────────────────────────────────────────────────
+
+Sesion          ||--o{  LogSesion       : genera
+Sesion          ||--||  Credencial      : "usa"
+Credencial      ||--o|  Token           : "genera"
+Sesion          ||--||  ArchivoContenedor : "lee"
+ArchivoContenedor ||--o{ Tag            : contiene
+ArchivoContenedor ||--o{ TriggerE       : contiene
+ArchivoContenedor ||--o{ VariableE      : contiene
+Sesion          ||--o{  CuentaGTM       : "consulta"
+CuentaGTM       ||--o{  ContenedorGTM  : "posee"
+ContenedorGTM   ||--o{  Workspace      : "alberga"
+Workspace       ||--o{  Tag            : "contiene (remoto)"
+Workspace       ||--o{  TriggerE       : "contiene (remoto)"
+Workspace       ||--o{  VariableE      : "contiene (remoto)"
+Importacion     }o--||  Workspace      : "aplica sobre"
+
+@enduml
