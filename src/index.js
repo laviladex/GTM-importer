@@ -5,11 +5,36 @@ import { loadCredentials, authorize } from './auth.js';
 import { GtmService } from './gtmService.js';
 import { logger } from './logger.js';
 
-async function main() {
-    console.log(chalk.bold.cyan('\n--- GTM Container Importer ---\n'));
-    logger.event('SESSION_START', { pid: process.pid, cwd: process.cwd() });
-    console.log(chalk.gray(`Log de sesión: ${logger.filePath}`));
+// ─────────────────────────────────────────────────────────────────────────────
+// Error catalog: maps known error substrings to a short user-facing message
+// ─────────────────────────────────────────────────────────────────────────────
+const ERROR_MESSAGES = [
+    { match: /default credentials|application default/i,      short: 'Error de autenticación con la API de Google.' },
+    { match: /not found|404/i,                                 short: 'Recurso no encontrado en GTM.' },
+    { match: /permission|403|unauthorized|401/i,               short: 'Sin permisos para realizar esta acción.' },
+    { match: /quota|429|rate limit/i,                          short: 'Límite de solicitudes a la API alcanzado.' },
+    { match: /network|ENOTFOUND|ECONNREFUSED|ETIMEDOUT/i,      short: 'Error de red. Verifica tu conexión.' },
+    { match: /credentials|token|oauth/i,                       short: 'Error de credenciales o token de acceso.' },
+    { match: /no existe|not found|ENOENT/i,                    short: 'Archivo no encontrado.' },
+    { match: /json|parse|syntax/i,                             short: 'El archivo JSON es inválido o está mal formado.' },
+];
 
+/**
+ * Returns a short, generic error message suitable for the console.
+ * The full details are always recorded in the log file.
+ */
+function shortMessage(error) {
+    const raw = error?.response?.data?.error?.message || error?.message || String(error);
+    for (const { match, short } of ERROR_MESSAGES) {
+        if (match.test(raw)) return short;
+    }
+    return 'Ocurrió un error inesperado. Revisa el log para más detalles.';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core import flow (single run)
+// ─────────────────────────────────────────────────────────────────────────────
+async function runImport() {
     try {
         // 1. Credentials
         const { credentialsPath } = await inquirer.prompt([
@@ -44,8 +69,8 @@ async function main() {
         if (!await fs.exists(containerPath)) {
             const msg = `El archivo ${containerPath} no existe.`;
             logger.error(msg);
-            console.error(chalk.red(`Error: ${msg}`));
-            return;
+            console.error(chalk.red(`  ✖ Archivo no encontrado.`));
+            return false; // trigger restart prompt
         }
         const containerConfig = await fs.readJSON(containerPath);
         logger.info(`container.json cargado desde: ${containerPath}`);
@@ -58,8 +83,8 @@ async function main() {
 
         if (accounts.length === 0) {
             logger.warn('No se encontraron cuentas asociadas a las credenciales.');
-            console.log(chalk.red('No se encontraron cuentas asociadas a estas credenciales.'));
-            return;
+            console.log(chalk.red('  ✖ Sin cuentas disponibles para estas credenciales.'));
+            return false;
         }
 
         let accountPath;
@@ -85,10 +110,9 @@ async function main() {
         }
 
         if (!accountPath) {
-            const msg = 'No se pudo determinar una ruta de cuenta válida.';
-            logger.error(msg);
-            console.error(chalk.red(`\nError: ${msg}`));
-            return;
+            logger.error('No se pudo determinar una ruta de cuenta válida.');
+            console.error(chalk.red('  ✖ No se pudo determinar la cuenta seleccionada.'));
+            return false;
         }
 
         // 4. List Containers
@@ -99,8 +123,8 @@ async function main() {
 
         if (!containers || containers.length === 0) {
             logger.warn(`No se encontraron contenedores en la cuenta: ${accountPath}`);
-            console.log(chalk.red('No se encontraron contenedores en esta cuenta.'));
-            return;
+            console.log(chalk.red('  ✖ Sin contenedores disponibles en esta cuenta.'));
+            return false;
         }
 
         let selectedContainerPath;
@@ -123,10 +147,9 @@ async function main() {
         }
 
         if (!selectedContainerPath) {
-            const msg = 'No se pudo determinar una ruta de contenedor válida.';
-            logger.error(msg);
-            console.error(chalk.red(`\nError: ${msg}`));
-            return;
+            logger.error('No se pudo determinar una ruta de contenedor válida.');
+            console.error(chalk.red('  ✖ No se pudo determinar el contenedor seleccionado.'));
+            return false;
         }
 
         // 5. Create or Get Workspace
@@ -156,7 +179,7 @@ async function main() {
             console.log(chalk.green(`\nUsando workspace existente: ${workspace.name}`));
         }
 
-        // 6. Import Mode & Conflict Strategy (BEFORE the diff)
+        // 6. Import Mode & Conflict Strategy
         console.log(chalk.cyan('\n--- CONFIGURACIÓN DE IMPORTACIÓN ---'));
 
         const { useMerge } = await inquirer.prompt([
@@ -186,7 +209,7 @@ async function main() {
             console.log(chalk.gray(`  Estrategia de conflictos: ${chalk.bold(conflictStrategy)}`));
         }
 
-        // 7. Analyze diff (now contextualized with the chosen mode)
+        // 7. Analyze diff
         console.log(chalk.yellow('\nAnalizando diferencias y posibles impactos...'));
         logger.event('DIFF_ANALYSIS_START', { workspace: workspace.path, importMode, conflictStrategy });
 
@@ -196,9 +219,9 @@ async function main() {
             gtm.listVariables(workspace.path)
         ]);
 
-        const localTags    = containerConfig.containerVersion?.tag      || containerConfig.tag      || [];
-        const localTriggers= containerConfig.containerVersion?.trigger   || containerConfig.trigger   || [];
-        const localVariables=containerConfig.containerVersion?.variable  || containerConfig.variable  || [];
+        const localTags     = containerConfig.containerVersion?.tag      || containerConfig.tag      || [];
+        const localTriggers = containerConfig.containerVersion?.trigger   || containerConfig.trigger   || [];
+        const localVariables= containerConfig.containerVersion?.variable  || containerConfig.variable  || [];
 
         const compare = (local, remote) => ({
             added:     local.filter(l => !remote.find(r => r.name === l.name)),
@@ -257,8 +280,7 @@ async function main() {
                 if (tagDiff.conflicts.length > 0)      console.log(chalk.yellow('\nConflictos Tags:'),      names(tagDiff.conflicts));
                 if (triggerDiff.conflicts.length > 0)  console.log(chalk.yellow('Conflictos Triggers:'),  names(triggerDiff.conflicts));
                 if (variableDiff.conflicts.length > 0) console.log(chalk.yellow('Conflictos Variables:'), names(variableDiff.conflicts));
-
-                logger.info('Detalle de conflictos', {
+                logger.info('Detalle conflictos', {
                     tags:      tagDiff.conflicts.map(i => i.name),
                     triggers:  triggerDiff.conflicts.map(i => i.name),
                     variables: variableDiff.conflicts.map(i => i.name)
@@ -270,7 +292,6 @@ async function main() {
         console.log(chalk.bold.red('\n¡ATENCIÓN! ESTA ACCIÓN MODIFICARÁ EL WORKSPACE.'));
         console.log(chalk.yellow('Nota: Solo se creará un borrador. Un administrador debe publicarlo desde GTM.'));
 
-        // Find selected account (may be auto-selected)
         const selectedAccount = accounts.find(a => (a.path || `accounts/${a.accountId}`) === accountPath) || accounts[0];
 
         const { confirmName1 } = await inquirer.prompt([
@@ -283,9 +304,9 @@ async function main() {
         logger.userInput('confirmName1', confirmName1 === selectedAccount.name ? '[CORRECTO]' : '[INCORRECTO]');
 
         if (confirmName1 !== selectedAccount.name) {
-            logger.warn('Primera confirmación de nombre fallida. Importación cancelada.');
+            logger.warn('Primera confirmación fallida.');
             console.log(chalk.red('\nEl nombre no coincide. Importación cancelada.'));
-            return;
+            return false;
         }
 
         const { confirmName2 } = await inquirer.prompt([
@@ -298,9 +319,9 @@ async function main() {
         logger.userInput('confirmName2', confirmName2 === selectedAccount.name ? '[CORRECTO]' : '[INCORRECTO]');
 
         if (confirmName2 !== selectedAccount.name) {
-            logger.warn('Segunda confirmación de nombre fallida. Importación cancelada.');
+            logger.warn('Segunda confirmación fallida.');
             console.log(chalk.red('\nEl nombre no coincide. Importación cancelada.'));
-            return;
+            return false;
         }
 
         const { finalConfirm } = await inquirer.prompt([
@@ -313,24 +334,64 @@ async function main() {
         ]);
         logger.userInput('finalConfirm', finalConfirm);
 
-        if (finalConfirm) {
-            logger.event('IMPORT_START', { workspace: workspace.path, importMode, conflictStrategy });
-            console.log(chalk.blue('\nImportando cambios al workspace (Borrador)...'));
-            await gtm.importContainer(workspace.path, containerConfig, importMode, conflictStrategy);
-            logger.event('IMPORT_SUCCESS', { workspace: workspace.path });
-            console.log(chalk.bold.green('\n¡Éxito! Los cambios se han importado correctamente como un borrador.'));
-            console.log(chalk.cyan('Un administrador debe revisar y publicar los cambios desde la consola de GTM.'));
-        } else {
+        if (!finalConfirm) {
             logger.event('IMPORT_CANCELLED_BY_USER');
             console.log(chalk.yellow('\nImportación cancelada.'));
+            return false;
         }
 
+        // 9. Execute import
+        logger.event('IMPORT_START', { workspace: workspace.path, importMode, conflictStrategy });
+        console.log(chalk.blue('\nImportando cambios al workspace (Borrador)...'));
+        await gtm.importContainer(workspace.path, containerConfig, importMode, conflictStrategy);
+        logger.event('IMPORT_SUCCESS', { workspace: workspace.path });
+        console.log(chalk.bold.green('\n¡Éxito! Los cambios se han importado correctamente como un borrador.'));
+        console.log(chalk.cyan('Un administrador debe revisar y publicar los cambios desde la consola de GTM.'));
+        return true; // success
+
     } catch (error) {
-        logger.error('Error crítico en main():', error.message, error.stack);
-        console.error(chalk.red('\nOcurrió un error crítico:'), error.message);
-    } finally {
-        logger.event('SESSION_END');
+        const msg = shortMessage(error);
+        logger.error('Error en runImport():', error.message, '\n' + (error.stack || ''));
+        console.error(chalk.red(`\n  ✖ ${msg}`));
+        console.log(chalk.gray(`  (Detalle completo en: ${logger.filePath})`));
+        return false;
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main loop with restart support
+// ─────────────────────────────────────────────────────────────────────────────
+async function main() {
+    console.log(chalk.bold.cyan('\n--- GTM Container Importer ---\n'));
+    logger.event('SESSION_START', { pid: process.pid, cwd: process.cwd() });
+    console.log(chalk.gray(`Log de sesión: ${logger.filePath}\n`));
+
+    let continueLoop = true;
+
+    while (continueLoop) {
+        await runImport();
+
+        // Ask if user wants to run again
+        console.log('');
+        const { restart } = await inquirer.prompt([
+            {
+                type: 'confirm',
+                name: 'restart',
+                message: '¿Deseas realizar otra importación?',
+                default: false
+            }
+        ]);
+
+        if (restart) {
+            logger.event('SESSION_RESTART');
+            console.log(chalk.cyan('\n──────────────────────────────────────────\n'));
+        } else {
+            continueLoop = false;
+        }
+    }
+
+    logger.event('SESSION_END');
+    console.log(chalk.bold.cyan('\n¡Hasta luego!\n'));
 }
 
 main();

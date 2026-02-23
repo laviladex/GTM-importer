@@ -3,6 +3,7 @@ import { logger } from './logger.js';
 
 export class GtmService {
     constructor(auth) {
+        this.auth = auth;
         this.tagmanager = google.tagmanager({ version: 'v2', auth });
     }
 
@@ -145,14 +146,15 @@ export class GtmService {
         try {
             const url = `https://tagmanager.googleapis.com/tagmanager/v2/${workspacePath}:import_container`;
 
-            const res = await this.tagmanager.context.google.auth.request({
+            const res = await this.auth.request({
                 method: 'POST',
                 url: url,
                 data: {
                     containerVersion: containerConfig,
                     importMode: importMode,
                     conflictStrategy: conflictStrategy
-                }
+                },
+                headers: { 'Content-Type': 'application/json' }
             });
 
             logger.apiResponse('importContainer', res.data);
